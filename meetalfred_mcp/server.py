@@ -1,8 +1,12 @@
-"""MeetAlfred MCP Server — campaign monitoring, lead management, and reply tracking.
+"""MeetAlfred MCP Server — campaign monitoring, lead management, reply tracking, and CRUD.
 
 Transport: stdio
-Auth: MEETALFRED_API_KEY environment variable (webhook key from Settings > Integrations > Webhooks)
-Optional: MEETALFRED_BASE_URL for white-label instances
+Auth:
+  MEETALFRED_API_KEY — webhook key (Settings > Integrations > Webhooks)
+  MEETALFRED_JWT_TOKEN — JWT token for internal API (optional, enables tags/campaign CRUD/replies)
+Optional:
+  MEETALFRED_BASE_URL — override webhook API base URL (white-label instances)
+  MEETALFRED_API_BASE_URL — override internal API base URL
 """
 
 from __future__ import annotations
@@ -17,10 +21,11 @@ from .client import MeetAlfredClient
 mcp = FastMCP(
     "meetalfred",
     instructions=(
-        "MeetAlfred MCP server for LinkedIn automation campaign monitoring. "
-        "Pull campaign data, track replies, manage leads, and review activity. "
+        "MeetAlfred MCP server for LinkedIn automation campaign monitoring and management. "
+        "Pull campaign data, track replies, manage leads, CRUD tags, and review activity. "
         "Use get_campaigns first to find campaign IDs for filtering other tools. "
-        "Pages start at 0 (not 1)."
+        "Webhook API tools: pages start at 0. Internal API tools: pages start at 1. "
+        "Internal API tools (tags, campaign CRUD, detailed replies) require MEETALFRED_JWT_TOKEN."
     ),
 )
 
@@ -243,6 +248,489 @@ def get_last_actions(
         result = _get_client().get_last_actions(
             action=action, page=page, per_page=per_page
         )
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+# ==================================================================
+# Internal API tools (require MEETALFRED_JWT_TOKEN)
+# ==================================================================
+
+# ------------------------------------------------------------------
+# Tags
+# ------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_all_tags() -> str:
+    """Get all tags (no pagination). Requires JWT token.
+
+    Returns a flat list of all tags with their IDs and names.
+    """
+    try:
+        result = _get_client().get_all_tags()
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def list_tags(
+    page: int = 1,
+    per_page: int = 25,
+    sort_field: str = "tag",
+    sort_order: str = "ASC",
+) -> str:
+    """List tags with pagination. Requires JWT token.
+
+    Args:
+        page: Page number (starts at 1).
+        per_page: Results per page (default 25).
+        sort_field: Field to sort by (default 'tag').
+        sort_order: 'ASC' or 'DESC'.
+    """
+    try:
+        result = _get_client().list_tags(
+            page=page, per_page=per_page,
+            sort_field=sort_field, sort_order=sort_order,
+        )
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def create_tag(name: str) -> str:
+    """Create a new tag. Requires JWT token.
+
+    Args:
+        name: Tag name to create.
+    """
+    try:
+        result = _get_client().create_tag(name=name)
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def update_tag(tag_id: int, name: str) -> str:
+    """Rename an existing tag. Requires JWT token.
+
+    Args:
+        tag_id: Tag ID (from get_all_tags or list_tags).
+        name: New tag name.
+    """
+    try:
+        result = _get_client().update_tag(tag_id=tag_id, name=name)
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def delete_tag(tag_id: int) -> str:
+    """Delete a tag. Requires JWT token.
+
+    Args:
+        tag_id: Tag ID (from get_all_tags or list_tags).
+    """
+    try:
+        result = _get_client().delete_tag(tag_id=tag_id)
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+# ------------------------------------------------------------------
+# Campaigns (internal API — richer details)
+# ------------------------------------------------------------------
+
+
+@mcp.tool()
+def list_campaigns_detailed(
+    status: str = "active",
+    category: str = "linkedin",
+    page: int = 1,
+    per_page: int = 25,
+    search: str = "",
+    run_state: str = "",
+) -> str:
+    """List campaigns with full details via internal API. Requires JWT token.
+
+    Richer than get_campaigns — includes stats, run state, category filtering.
+
+    Args:
+        status: 'active', 'draft', 'archived', or 'all'.
+        category: 'linkedin', 'email', 'twitter', or 'all'.
+        page: Page number (starts at 1).
+        per_page: Results per page (default 25).
+        search: Filter campaigns by name.
+        run_state: Filter by run state ('running', 'paused', or '').
+    """
+    try:
+        result = _get_client().list_campaigns_detailed(
+            status=status, category=category,
+            page=page, per_page=per_page,
+            search=search, run_state=run_state,
+        )
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def get_campaign(campaign_id: int) -> str:
+    """Get full details of a single campaign. Requires JWT token.
+
+    Args:
+        campaign_id: Campaign ID (from get_campaigns or list_campaigns_detailed).
+    """
+    try:
+        result = _get_client().get_campaign(campaign_id=campaign_id)
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def get_campaign_counts(category: str = "linkedin") -> str:
+    """Get campaign counts by status (active, draft, archived). Requires JWT token.
+
+    Args:
+        category: 'linkedin', 'email', or 'twitter'.
+    """
+    try:
+        result = _get_client().get_campaign_counts(category=category)
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def update_campaign(campaign_id: int, label: str = "", status: str = "") -> str:
+    """Update campaign fields. Requires JWT token.
+
+    Args:
+        campaign_id: Campaign ID.
+        label: New campaign name (optional).
+        status: New status — 'active', 'draft', 'archived' (optional).
+    """
+    try:
+        fields: dict = {}
+        if label:
+            fields["label"] = label
+        if status:
+            fields["status"] = status
+        if not fields:
+            return json.dumps({"status": "error", "message": "No fields to update"})
+        result = _get_client().update_campaign(campaign_id=campaign_id, **fields)
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def delete_campaign(campaign_id: int) -> str:
+    """Delete a campaign. Requires JWT token. Use with caution.
+
+    Args:
+        campaign_id: Campaign ID to delete.
+    """
+    try:
+        result = _get_client().delete_campaign(campaign_id=campaign_id)
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+# ------------------------------------------------------------------
+# Replies (internal API — detailed)
+# ------------------------------------------------------------------
+
+
+@mcp.tool()
+def list_replies_detailed(
+    page: int = 1,
+    per_page: int = 25,
+) -> str:
+    """List replies with full details via internal API. Requires JWT token.
+
+    Richer than get_replies — includes sorting, more metadata.
+
+    Args:
+        page: Page number (starts at 1).
+        per_page: Results per page (default 25).
+    """
+    try:
+        result = _get_client().list_replies_detailed(
+            page=page, per_page=per_page,
+        )
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+# ------------------------------------------------------------------
+# Campaign Operations
+# ------------------------------------------------------------------
+
+
+@mcp.tool()
+def pause_campaign(campaign_id: int) -> str:
+    """Pause a running campaign. Requires JWT token.
+
+    Args:
+        campaign_id: Campaign ID to pause.
+    """
+    try:
+        result = _get_client().pause_campaign(campaign_id=campaign_id)
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def resume_campaign(campaign_id: int) -> str:
+    """Resume a paused campaign. Requires JWT token.
+
+    Args:
+        campaign_id: Campaign ID to resume.
+    """
+    try:
+        result = _get_client().resume_campaign(campaign_id=campaign_id)
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def rename_campaign(campaign_id: int, name: str) -> str:
+    """Rename a campaign. Requires JWT token.
+
+    Args:
+        campaign_id: Campaign ID.
+        name: New campaign name.
+    """
+    try:
+        result = _get_client().rename_campaign(campaign_id=campaign_id, name=name)
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def clone_campaign(campaign_id: int) -> str:
+    """Clone (duplicate) a campaign. Requires JWT token.
+
+    Args:
+        campaign_id: Campaign ID to clone.
+    """
+    try:
+        result = _get_client().clone_campaign(campaign_id=campaign_id)
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def archive_campaign(campaign_id: int) -> str:
+    """Archive a campaign. Requires JWT token.
+
+    Args:
+        campaign_id: Campaign ID to archive.
+    """
+    try:
+        result = _get_client().archive_campaign(campaign_id=campaign_id)
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def get_campaigns_grouped() -> str:
+    """Get all campaigns grouped by category (linkedin, email, twitter). Requires JWT token."""
+    try:
+        result = _get_client().get_campaigns_grouped()
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+# ------------------------------------------------------------------
+# Conversations / Messaging
+# ------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_conversation_messages(
+    conversation_id: str,
+    entity_urn: str = "",
+) -> str:
+    """Get messages in a conversation thread. Requires JWT token.
+
+    Use the conversationUrn from reply data to load the full conversation.
+
+    Args:
+        conversation_id: Conversation URN (from reply data).
+        entity_urn: Lead entity URN (optional, for context).
+    """
+    try:
+        result = _get_client().get_conversation_messages(
+            conversation_id=conversation_id, entity_urn=entity_urn,
+        )
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def send_message(conversation_id: str, message: str) -> str:
+    """Send a message in a conversation (reply to a lead). Requires JWT token.
+
+    Workflow: Use list_replies_detailed to find conversationUrn, then send_message.
+
+    Args:
+        conversation_id: Conversation URN (from reply data).
+        message: Message text to send.
+    """
+    try:
+        result = _get_client().send_message(
+            conversation_id=conversation_id, message=message,
+        )
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+# ------------------------------------------------------------------
+# Lead Management (internal API)
+# ------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_campaign_leads(
+    campaign_id: int,
+    lead_type: str = "approved",
+    page: int = 1,
+    per_page: int = 25,
+) -> str:
+    """List leads in a campaign with status filtering. Requires JWT token.
+
+    Args:
+        campaign_id: Campaign ID.
+        lead_type: Status filter — 'approved', 'connected', 'replied',
+            'messaged', 'invitesPending', 'followedUp', 'allReplies', etc.
+        page: Page number (starts at 1).
+        per_page: Results per page (default 25).
+    """
+    try:
+        result = _get_client().get_campaign_leads(
+            campaign_id=campaign_id, lead_type=lead_type,
+            page=page, per_page=per_page,
+        )
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def get_lead_statuses(campaign_id: int) -> str:
+    """Get lead status counts for a campaign (views, connects, replies, etc.). Requires JWT token.
+
+    Args:
+        campaign_id: Campaign ID.
+    """
+    try:
+        result = _get_client().get_lead_statuses(campaign_id=campaign_id)
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def return_lead_to_campaign(
+    entity_urns: list[str],
+    campaign_id: int = 0,
+) -> str:
+    """Return leads to a campaign sequence. Requires JWT token.
+
+    Re-enqueues stopped/excluded leads so they continue receiving campaign touches.
+
+    Args:
+        entity_urns: List of lead entity URNs (e.g. ['ACoAAA...']).
+        campaign_id: Campaign ID (optional, for single-campaign return).
+    """
+    try:
+        result = _get_client().return_lead_to_campaign(
+            entity_urns=entity_urns,
+            campaign_id=campaign_id if campaign_id else None,
+        )
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def add_tags_to_leads(entity_urns: list[str], tag_ids: list[int]) -> str:
+    """Add tags to one or more leads. Requires JWT token.
+
+    Args:
+        entity_urns: List of lead entity URNs.
+        tag_ids: List of tag IDs to add (from get_all_tags).
+    """
+    try:
+        result = _get_client().add_tags_to_leads(
+            entity_urns=entity_urns, tag_ids=tag_ids,
+        )
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def exclude_leads(entity_urns: list[str], exclude: bool = True) -> str:
+    """Exclude or un-exclude leads from campaigns. Requires JWT token.
+
+    Args:
+        entity_urns: List of lead entity URNs.
+        exclude: True to exclude, False to un-exclude (default True).
+    """
+    try:
+        result = _get_client().exclude_leads(
+            entity_urns=entity_urns, exclude=exclude,
+        )
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+# ------------------------------------------------------------------
+# Notifications
+# ------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_unread_notification_count() -> str:
+    """Get count of unread notifications. Requires JWT token."""
+    try:
+        result = _get_client().get_unread_notification_count()
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+# ------------------------------------------------------------------
+# User
+# ------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_current_user() -> str:
+    """Get the current authenticated user's profile. Requires JWT token."""
+    try:
+        result = _get_client().get_current_user()
         return json.dumps({"status": "success", "data": result}, indent=2)
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
