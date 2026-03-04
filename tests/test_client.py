@@ -63,21 +63,35 @@ class TestClientInit:
         assert client.base_url == DEFAULT_BASE_URL
 
     def test_custom_base_url(self):
-        c = MeetAlfredClient(api_key="k", base_url="https://proactivebda.ai/api/v1")
-        assert c.base_url == "https://proactivebda.ai/api/v1"
+        c = MeetAlfredClient(
+            api_key="k",
+            base_url="https://api.erubheorhgur.com/api/integrations/webhook",
+        )
+        assert c.base_url == "https://api.erubheorhgur.com/api/integrations/webhook"
 
     def test_env_base_url(self):
         env = {
             "MEETALFRED_API_KEY": "k",
-            "MEETALFRED_BASE_URL": "https://custom.example.com/api/v1/",
+            "MEETALFRED_BASE_URL": "https://custom.example.com/api/integrations/webhook/",
         }
         with patch.dict(os.environ, env, clear=True):
             c = MeetAlfredClient()
             # Trailing slash should be stripped
-            assert c.base_url == "https://custom.example.com/api/v1"
+            assert c.base_url == "https://custom.example.com/api/integrations/webhook"
 
-    def test_auth_header_set(self, client):
-        assert client.session.headers["X-Alfred-Auth"] == "test-api-key-12345"
+    def test_no_auth_header(self, client):
+        # Auth is via query param, not header
+        assert "X-Alfred-Auth" not in client.session.headers
+        assert "Authorization" not in client.session.headers
+
+    def test_webhook_key_in_requests(self, client, mock_response):
+        """Verify webhook_key is passed as query parameter."""
+        with patch.object(
+            client.session, "request", return_value=mock_response({"campaigns": []})
+        ) as mock_req:
+            client.get_campaigns()
+            _, kwargs = mock_req.call_args
+            assert kwargs["params"]["webhook_key"] == "test-api-key-12345"
 
 
 # ------------------------------------------------------------------
@@ -86,17 +100,25 @@ class TestClientInit:
 
 
 class TestCampaigns:
-    def test_get_campaigns(self, client, mock_response):
-        campaigns = [{"id": "c1", "name": "Recruiter Outreach", "status": "active"}]
+    def test_get_campaigns_default(self, client, mock_response):
+        campaigns = {"campaigns": [{"id": 1, "label": "Test", "status": "active"}]}
         with patch.object(
             client.session, "request", return_value=mock_response(campaigns)
         ) as mock_req:
             result = client.get_campaigns()
             assert result == campaigns
-            mock_req.assert_called_once()
             args, kwargs = mock_req.call_args
             assert args[0] == "GET"
             assert "/campaigns" in args[1]
+            assert kwargs["params"]["type"] == "active"
+
+    def test_get_campaigns_all(self, client, mock_response):
+        with patch.object(
+            client.session, "request", return_value=mock_response({"campaigns": []})
+        ) as mock_req:
+            client.get_campaigns(campaign_type="all")
+            _, kwargs = mock_req.call_args
+            assert kwargs["params"]["type"] == "all"
 
 
 # ------------------------------------------------------------------
@@ -106,41 +128,54 @@ class TestCampaigns:
 
 class TestLeads:
     def test_get_leads_no_filter(self, client, mock_response):
-        leads = [{"id": "l1", "name": "John Doe"}]
+        data = {"actions": [{"person": {"name": "John Doe"}}]}
         with patch.object(
-            client.session, "request", return_value=mock_response(leads)
+            client.session, "request", return_value=mock_response(data)
         ) as mock_req:
             result = client.get_leads()
-            assert result == leads
+            assert result == data
             _, kwargs = mock_req.call_args
-            assert kwargs["params"]["page"] == 1
-            assert kwargs["params"]["per_page"] == 50
+            assert kwargs["params"]["page"] == 0
+            assert kwargs["params"]["per_page"] == 25
+            assert "campaign" not in kwargs["params"]
 
     def test_get_leads_with_campaign_filter(self, client, mock_response):
         with patch.object(
-            client.session, "request", return_value=mock_response([])
+            client.session, "request", return_value=mock_response({"actions": []})
         ) as mock_req:
-            client.get_leads(campaign_id="c1", status="replied")
+            client.get_leads(campaign_id=1437182, page=1, per_page=10)
             _, kwargs = mock_req.call_args
-            assert kwargs["params"]["campaign_id"] == "c1"
-            assert kwargs["params"]["status"] == "replied"
+            assert kwargs["params"]["campaign"] == 1437182
+            assert kwargs["params"]["page"] == 1
 
     def test_add_lead(self, client, mock_response):
-        resp_data = {"id": "l2", "status": "added"}
+        resp_data = {"id": 1, "message": "Well done!", "success": True}
         with patch.object(
             client.session, "request", return_value=mock_response(resp_data)
         ) as mock_req:
             result = client.add_lead(
-                campaign_id="c1",
-                linkedin_url="https://linkedin.com/in/johndoe",
-                first_name="John",
-                last_name="Doe",
+                campaign_id=1437182,
+                linkedin_profile_url="https://www.linkedin.com/in/johndoe/",
+                email="john@example.com",
             )
             assert result == resp_data
             args, kwargs = mock_req.call_args
             assert args[0] == "POST"
-            assert kwargs["json"]["campaign_id"] == "c1"
-            assert kwargs["json"]["linkedin_url"] == "https://linkedin.com/in/johndoe"
+            assert "/add_lead_to_campaign" in args[1]
+            assert kwargs["json"]["campaign"] == 1437182
+            assert kwargs["json"]["linkedin_profile_url"] == "https://www.linkedin.com/in/johndoe/"
+            assert kwargs["json"]["email"] == "john@example.com"
+
+    def test_add_lead_minimal(self, client, mock_response):
+        with patch.object(
+            client.session, "request", return_value=mock_response({"success": True})
+        ) as mock_req:
+            client.add_lead(
+                campaign_id=100,
+                linkedin_profile_url="https://www.linkedin.com/in/test/",
+            )
+            _, kwargs = mock_req.call_args
+            assert "email" not in kwargs["json"]
 
 
 # ------------------------------------------------------------------
@@ -150,22 +185,21 @@ class TestLeads:
 
 class TestReplies:
     def test_get_replies(self, client, mock_response):
-        replies = [{"lead_id": "l1", "message": "Thanks for connecting!"}]
+        replies = {"actions": [{"name": "Jane", "reply_message": "Thanks!"}]}
         with patch.object(
             client.session, "request", return_value=mock_response(replies)
         ):
             result = client.get_replies()
             assert result == replies
 
-    def test_get_replies_filtered(self, client, mock_response):
+    def test_get_replies_pagination(self, client, mock_response):
         with patch.object(
-            client.session, "request", return_value=mock_response([])
+            client.session, "request", return_value=mock_response({"actions": []})
         ) as mock_req:
-            client.get_replies(campaign_id="c1", page=2, per_page=25)
+            client.get_replies(page=2, per_page=10)
             _, kwargs = mock_req.call_args
-            assert kwargs["params"]["campaign_id"] == "c1"
             assert kwargs["params"]["page"] == 2
-            assert kwargs["params"]["per_page"] == 25
+            assert kwargs["params"]["per_page"] == 10
 
 
 # ------------------------------------------------------------------
@@ -175,11 +209,22 @@ class TestReplies:
 
 class TestConnections:
     def test_get_connections(self, client, mock_response):
+        data = {"actions": [{"firstName": "Brandon", "lastName": "Newsome"}]}
         with patch.object(
-            client.session, "request", return_value=mock_response([])
-        ):
+            client.session, "request", return_value=mock_response(data)
+        ) as mock_req:
             result = client.get_connections()
-            assert result == []
+            assert result == data
+            _, kwargs = mock_req.call_args
+            assert kwargs["params"]["return_only_synced"] == "true"
+
+    def test_get_connections_all(self, client, mock_response):
+        with patch.object(
+            client.session, "request", return_value=mock_response({"actions": []})
+        ) as mock_req:
+            client.get_connections(return_only_synced=False)
+            _, kwargs = mock_req.call_args
+            assert kwargs["params"]["return_only_synced"] == "false"
 
 
 # ------------------------------------------------------------------
@@ -198,41 +243,46 @@ class TestTeam:
 
     def test_get_member_connections(self, client, mock_response):
         with patch.object(
-            client.session, "request", return_value=mock_response([])
+            client.session, "request", return_value=mock_response({"connections": []})
         ) as mock_req:
-            client.get_member_connections(member_id="m1")
+            client.get_member_connections(page=0, per_page=10)
             _, kwargs = mock_req.call_args
-            assert kwargs["params"]["member_id"] == "m1"
+            assert kwargs["params"]["page"] == 0
 
 
 # ------------------------------------------------------------------
-# Activity
+# Last Actions
 # ------------------------------------------------------------------
 
 
-class TestActivity:
-    def test_get_last_actions(self, client, mock_response):
-        actions = [{"type": "connection_request", "lead": "l1"}]
+class TestLastActions:
+    def test_get_last_actions_default(self, client, mock_response):
+        data = {"actions": [{"desc": "linkedin reply detected"}]}
         with patch.object(
-            client.session, "request", return_value=mock_response(actions)
-        ):
+            client.session, "request", return_value=mock_response(data)
+        ) as mock_req:
             result = client.get_last_actions()
-            assert result == actions
+            assert result == data
+            _, kwargs = mock_req.call_args
+            assert kwargs["params"]["action"] == "all_replies"
 
-
-# ------------------------------------------------------------------
-# User
-# ------------------------------------------------------------------
-
-
-class TestUser:
-    def test_get_me(self, client, mock_response):
-        user = {"id": "u1", "email": "paul@proactioncto.com"}
+    def test_get_last_actions_accepted(self, client, mock_response):
         with patch.object(
-            client.session, "request", return_value=mock_response(user)
-        ):
-            result = client.get_me()
-            assert result == user
+            client.session, "request", return_value=mock_response({"actions": []})
+        ) as mock_req:
+            client.get_last_actions(action="accepted")
+            _, kwargs = mock_req.call_args
+            assert kwargs["params"]["action"] == "accepted"
+
+    def test_get_last_actions_all_types(self, client):
+        """Verify all valid action types are accepted."""
+        for action in MeetAlfredClient.VALID_ACTIONS:
+            # Should not raise
+            assert action in MeetAlfredClient.VALID_ACTIONS
+
+    def test_invalid_action_raises(self, client):
+        with pytest.raises(ValueError, match="Invalid action"):
+            client.get_last_actions(action="nonexistent")
 
 
 # ------------------------------------------------------------------

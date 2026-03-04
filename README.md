@@ -63,7 +63,7 @@ If you're using a white-label MeetAlfred instance, set the base URL:
       "command": "meetalfred-mcp",
       "env": {
         "MEETALFRED_API_KEY": "your-api-key-here",
-        "MEETALFRED_BASE_URL": "https://your-instance.com/api/v1"
+        "MEETALFRED_BASE_URL": "https://api.your-instance.com/api/integrations/webhook"
       }
     }
   }
@@ -92,22 +92,21 @@ Add to `claude_desktop_config.json`:
 
 | Tool | Description |
 |------|-------------|
-| `get_campaigns` | List all campaigns with IDs, names, and status |
-| `get_leads` | Fetch leads, optionally filtered by campaign and status |
-| `add_lead` | Add a new lead to a campaign (LinkedIn URL or email) |
-| `get_replies` | Get replies received from leads |
-| `get_connections` | Get connection data between leads and team members |
-| `get_team_members` | List team members |
-| `get_member_connections` | Get connections for a specific team member |
-| `get_last_actions` | Get recent account activity |
-| `get_me` | Get current user profile |
+| `get_campaigns` | List campaigns by type (active, draft, archived, all) |
+| `get_leads` | Fetch leads with campaign and person details |
+| `add_lead` | Add a new lead to a campaign (LinkedIn URL required) |
+| `get_replies` | Get reply messages from leads across campaigns |
+| `get_connections` | Get LinkedIn connections with full profile data |
+| `get_team_members` | List team members (requires team owner access) |
+| `get_member_connections` | Get connections across team members |
+| `get_last_actions` | Get recent activity by type (invites, accepted, messages, replies, emails, etc.) |
 
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `MEETALFRED_API_KEY` | Yes | API key from Settings > Integrations > Webhooks |
-| `MEETALFRED_BASE_URL` | No | Override for white-label instances (default: `https://api.meetalfred.com/api/v1`) |
+| `MEETALFRED_BASE_URL` | No | Override for white-label instances (default: `https://api.meetalfred.com/api/integrations/webhook`) |
 
 ## Development
 

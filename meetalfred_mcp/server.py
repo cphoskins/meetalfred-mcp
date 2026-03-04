@@ -1,8 +1,8 @@
-"""MeetAlfred MCP Server — tools for campaign monitoring, lead management, and reply tracking.
+"""MeetAlfred MCP Server — campaign monitoring, lead management, and reply tracking.
 
 Transport: stdio
-Auth: MEETALFRED_API_KEY environment variable (from Settings > Integrations > Webhooks)
-Optional: MEETALFRED_BASE_URL for white-label instances (defaults to api.meetalfred.com)
+Auth: MEETALFRED_API_KEY environment variable (webhook key from Settings > Integrations > Webhooks)
+Optional: MEETALFRED_BASE_URL for white-label instances
 """
 
 from __future__ import annotations
@@ -19,7 +19,8 @@ mcp = FastMCP(
     instructions=(
         "MeetAlfred MCP server for LinkedIn automation campaign monitoring. "
         "Pull campaign data, track replies, manage leads, and review activity. "
-        "Use get_campaigns first to find campaign IDs for filtering other tools."
+        "Use get_campaigns first to find campaign IDs for filtering other tools. "
+        "Pages start at 0 (not 1)."
     ),
 )
 
@@ -43,13 +44,16 @@ def _get_client() -> MeetAlfredClient:
 
 
 @mcp.tool()
-def get_campaigns() -> str:
-    """List all MeetAlfred campaigns with their IDs, names, and status.
+def get_campaigns(campaign_type: str = "active") -> str:
+    """List MeetAlfred campaigns with their IDs, names, and status.
 
-    Use campaign IDs from this response to filter leads, replies, and other tools.
+    Use campaign IDs from this response to filter leads and other tools.
+
+    Args:
+        campaign_type: Filter by type — 'active', 'draft', 'archived', or 'all'.
     """
     try:
-        result = _get_client().get_campaigns()
+        result = _get_client().get_campaigns(campaign_type=campaign_type)
         return json.dumps({"status": "success", "data": result}, indent=2)
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
@@ -62,23 +66,23 @@ def get_campaigns() -> str:
 
 @mcp.tool()
 def get_leads(
-    campaign_id: str = "",
-    status: str = "",
-    page: int = 1,
-    per_page: int = 50,
+    campaign_id: int = 0,
+    page: int = 0,
+    per_page: int = 25,
 ) -> str:
-    """Fetch leads from MeetAlfred, optionally filtered by campaign and status.
+    """Fetch leads with campaign and person details.
+
+    Returns an 'actions' array with campaign info and person details
+    (name, title, company, LinkedIn URL, email, etc.).
 
     Args:
-        campaign_id: Filter to a specific campaign (from get_campaigns).
-        status: Filter by lead status (e.g., 'active', 'replied', 'connected').
-        page: Page number (starts at 1).
-        per_page: Results per page (default 50).
+        campaign_id: Filter to a specific campaign ID (0 = all campaigns).
+        page: Page number (starts at 0).
+        per_page: Results per page (default 25).
     """
     try:
         result = _get_client().get_leads(
-            campaign_id=campaign_id or None,
-            status=status or None,
+            campaign_id=campaign_id if campaign_id else None,
             page=page,
             per_page=per_page,
         )
@@ -89,33 +93,22 @@ def get_leads(
 
 @mcp.tool()
 def add_lead(
-    campaign_id: str,
-    linkedin_url: str = "",
+    campaign_id: int,
+    linkedin_profile_url: str,
     email: str = "",
-    first_name: str = "",
-    last_name: str = "",
-    company: str = "",
 ) -> str:
     """Add a new lead to a MeetAlfred campaign.
 
-    At minimum, provide a campaign_id and either a linkedin_url or email.
-
     Args:
         campaign_id: Target campaign ID (required, from get_campaigns).
-        linkedin_url: LinkedIn profile URL of the lead.
-        email: Email address of the lead.
-        first_name: Lead's first name.
-        last_name: Lead's last name.
-        company: Lead's company name.
+        linkedin_profile_url: Full LinkedIn profile URL of the lead (required).
+        email: Email address (required only for email/CSV campaigns).
     """
     try:
         result = _get_client().add_lead(
             campaign_id=campaign_id,
-            linkedin_url=linkedin_url or None,
+            linkedin_profile_url=linkedin_profile_url,
             email=email or None,
-            first_name=first_name or None,
-            last_name=last_name or None,
-            company=company or None,
         )
         return json.dumps({"status": "success", "data": result}, indent=2)
     except Exception as e:
@@ -129,25 +122,20 @@ def add_lead(
 
 @mcp.tool()
 def get_replies(
-    campaign_id: str = "",
-    page: int = 1,
-    per_page: int = 50,
+    page: int = 0,
+    per_page: int = 25,
 ) -> str:
-    """Get replies received from leads across campaigns.
+    """Get replies received from leads across all campaigns.
 
-    Use this to monitor campaign responses and identify leads to follow up with.
+    Returns reply messages with lead info (name, LinkedIn URL, reply text,
+    campaign, timestamp). Use to monitor responses and identify follow-ups.
 
     Args:
-        campaign_id: Filter to a specific campaign (from get_campaigns).
-        page: Page number (starts at 1).
-        per_page: Results per page (default 50).
+        page: Page number (starts at 0).
+        per_page: Results per page (default 25).
     """
     try:
-        result = _get_client().get_replies(
-            campaign_id=campaign_id or None,
-            page=page,
-            per_page=per_page,
-        )
+        result = _get_client().get_replies(page=page, per_page=per_page)
         return json.dumps({"status": "success", "data": result}, indent=2)
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
@@ -160,17 +148,26 @@ def get_replies(
 
 @mcp.tool()
 def get_connections(
-    page: int = 1,
-    per_page: int = 50,
+    return_only_synced: bool = True,
+    page: int = 0,
+    per_page: int = 25,
 ) -> str:
-    """Get connection data between leads and team members.
+    """Get LinkedIn connections with full profile data.
+
+    Returns connection details: name, headline, company, email, phone,
+    LinkedIn URL, skills, location, connected date, and more.
 
     Args:
-        page: Page number (starts at 1).
-        per_page: Results per page (default 50).
+        return_only_synced: Only return synced connections (default true).
+        page: Page number (starts at 0).
+        per_page: Results per page (default 25).
     """
     try:
-        result = _get_client().get_connections(page=page, per_page=per_page)
+        result = _get_client().get_connections(
+            return_only_synced=return_only_synced,
+            page=page,
+            per_page=per_page,
+        )
         return json.dumps({"status": "success", "data": result}, indent=2)
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
@@ -183,7 +180,7 @@ def get_connections(
 
 @mcp.tool()
 def get_team_members() -> str:
-    """List team members associated with the MeetAlfred account."""
+    """List team members (requires team owner access)."""
     try:
         result = _get_client().get_team_members()
         return json.dumps({"status": "success", "data": result}, indent=2)
@@ -193,63 +190,59 @@ def get_team_members() -> str:
 
 @mcp.tool()
 def get_member_connections(
-    member_id: str = "",
-    page: int = 1,
-    per_page: int = 50,
+    page: int = 0,
+    per_page: int = 25,
 ) -> str:
-    """Get connections for a specific team member.
+    """Get connections across team members.
 
     Args:
-        member_id: Team member ID (from get_team_members).
-        page: Page number (starts at 1).
-        per_page: Results per page (default 50).
+        page: Page number (starts at 0).
+        per_page: Results per page (default 25).
     """
     try:
-        result = _get_client().get_member_connections(
-            member_id=member_id or None,
-            page=page,
-            per_page=per_page,
-        )
+        result = _get_client().get_member_connections(page=page, per_page=per_page)
         return json.dumps({"status": "success", "data": result}, indent=2)
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
 
 
 # ------------------------------------------------------------------
-# Activity
+# Activity / Last Actions
 # ------------------------------------------------------------------
 
 
 @mcp.tool()
 def get_last_actions(
-    page: int = 1,
-    per_page: int = 50,
+    action: str = "all_replies",
+    page: int = 0,
+    per_page: int = 25,
 ) -> str:
-    """Get recent account activity and actions taken.
+    """Get recent activity and actions performed by MeetAlfred.
 
-    Useful for monitoring campaign progress and reviewing what happened recently.
+    Powerful tool for monitoring campaign activity — invites sent,
+    connections accepted, messages sent, replies received, etc.
 
     Args:
-        page: Page number (starts at 1).
-        per_page: Results per page (default 50).
+        action: Action type to retrieve. Options:
+            - 'invites' — LinkedIn invites sent
+            - 'accepted' — accepted connection requests
+            - 'already_connected' — leads already connected
+            - 'already_invited' — leads already invited
+            - 'messages' — LinkedIn messages and InMails sent
+            - 'replies' — LinkedIn replies received
+            - 'emails' — emails sent
+            - 'email_replies' — email replies received
+            - 'twitter' — X (Twitter) messages sent
+            - 'twitter_replies' — X replies received
+            - 'all_replies' — all replies across all channels (default)
+            - 'greetings' — birthday, anniversary, job change messages
+        page: Page number (starts at 0).
+        per_page: Results per page (default 25).
     """
     try:
-        result = _get_client().get_last_actions(page=page, per_page=per_page)
-        return json.dumps({"status": "success", "data": result}, indent=2)
-    except Exception as e:
-        return json.dumps({"status": "error", "message": str(e)})
-
-
-# ------------------------------------------------------------------
-# User
-# ------------------------------------------------------------------
-
-
-@mcp.tool()
-def get_me() -> str:
-    """Get the current MeetAlfred user profile and account info."""
-    try:
-        result = _get_client().get_me()
+        result = _get_client().get_last_actions(
+            action=action, page=page, per_page=per_page
+        )
         return json.dumps({"status": "success", "data": result}, indent=2)
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})

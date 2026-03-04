@@ -1,11 +1,10 @@
 """MeetAlfred API client — independent from MCP layer.
 
-Wraps the MeetAlfred webhook/REST API. Base URL defaults to the public
-API (api.meetalfred.com) but can be overridden for white-label instances.
+Wraps the MeetAlfred webhook API. Base URL defaults to the public API
+but can be overridden for white-label instances via MEETALFRED_BASE_URL.
 
-Authentication is via API key passed in the ``X-Alfred-Auth`` header.
-Generate yours at Settings > Integrations > Webhooks in your MeetAlfred
-dashboard.
+Authentication is via the ``webhook_key`` query parameter on every request.
+Generate yours at Settings > Integrations > Webhooks.
 """
 
 from __future__ import annotations
@@ -16,11 +15,11 @@ from typing import Any
 import requests
 
 
-DEFAULT_BASE_URL = "https://api.meetalfred.com/api/v1"
+DEFAULT_BASE_URL = "https://api.meetalfred.com/api/integrations/webhook"
 
 
 class MeetAlfredClient:
-    """Low-level HTTP client for the MeetAlfred API."""
+    """Low-level HTTP client for the MeetAlfred webhook API."""
 
     def __init__(
         self,
@@ -38,12 +37,7 @@ class MeetAlfredClient:
             or DEFAULT_BASE_URL
         ).rstrip("/")
         self.session = requests.Session()
-        self.session.headers.update(
-            {
-                "Content-Type": "application/json",
-                "X-Alfred-Auth": self.api_key,
-            }
-        )
+        self.session.headers.update({"Content-Type": "application/json"})
 
     # ------------------------------------------------------------------
     # Generic request helper
@@ -56,9 +50,14 @@ class MeetAlfredClient:
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
     ) -> Any:
-        """Execute an HTTP request and return parsed JSON."""
+        """Execute an HTTP request with webhook_key auth and return parsed JSON."""
         url = f"{self.base_url}/{path.lstrip('/')}"
-        resp = self.session.request(method, url, params=params, json=json_body)
+        all_params = {"webhook_key": self.api_key}
+        if params:
+            all_params.update(params)
+        resp = self.session.request(
+            method, url, params=all_params, json=json_body
+        )
         resp.raise_for_status()
         if not resp.text.strip():
             return {}
@@ -68,9 +67,13 @@ class MeetAlfredClient:
     # Campaigns
     # ------------------------------------------------------------------
 
-    def get_campaigns(self) -> Any:
-        """Retrieve list of campaigns."""
-        return self._request("GET", "/campaigns")
+    def get_campaigns(self, campaign_type: str = "active") -> Any:
+        """Retrieve campaigns.
+
+        Args:
+            campaign_type: One of 'active', 'draft', 'archived', 'all'.
+        """
+        return self._request("GET", "/campaigns", params={"type": campaign_type})
 
     # ------------------------------------------------------------------
     # Leads
@@ -78,43 +81,45 @@ class MeetAlfredClient:
 
     def get_leads(
         self,
-        campaign_id: str | None = None,
-        status: str | None = None,
-        page: int = 1,
-        per_page: int = 50,
+        campaign_id: int | None = None,
+        page: int = 0,
+        per_page: int = 25,
     ) -> Any:
-        """Fetch leads with optional filtering."""
+        """Fetch leads. Returns data in 'actions' array with campaign and person objects.
+
+        Args:
+            campaign_id: Filter to a specific campaign ID.
+            page: Page number (starts at 0).
+            per_page: Results per page.
+        """
         params: dict[str, Any] = {"page": page, "per_page": per_page}
-        if campaign_id:
-            params["campaign_id"] = campaign_id
-        if status:
-            params["status"] = status
-        return self._request("GET", "/leads", params=params)
+        if campaign_id is not None:
+            params["campaign"] = campaign_id
+        return self._request("GET", "/new-leads", params=params)
 
     def add_lead(
         self,
-        campaign_id: str,
-        linkedin_url: str | None = None,
+        campaign_id: int,
+        linkedin_profile_url: str,
         email: str | None = None,
-        first_name: str | None = None,
-        last_name: str | None = None,
-        company: str | None = None,
-        **extra_fields: Any,
+        **custom_fields: Any,
     ) -> Any:
-        """Add a new lead to a campaign."""
-        body: dict[str, Any] = {"campaign_id": campaign_id}
-        if linkedin_url:
-            body["linkedin_url"] = linkedin_url
+        """Add a new lead to a campaign.
+
+        Args:
+            campaign_id: Target campaign ID (required).
+            linkedin_profile_url: LinkedIn profile URL (required).
+            email: Email address (required only for email/CSV campaigns).
+            **custom_fields: Custom CSV fields prefixed with csv_ (e.g. csv_company="Acme").
+        """
+        body: dict[str, Any] = {
+            "campaign": campaign_id,
+            "linkedin_profile_url": linkedin_profile_url,
+        }
         if email:
             body["email"] = email
-        if first_name:
-            body["first_name"] = first_name
-        if last_name:
-            body["last_name"] = last_name
-        if company:
-            body["company"] = company
-        body.update(extra_fields)
-        return self._request("POST", "/leads", json_body=body)
+        body.update(custom_fields)
+        return self._request("POST", "/add_lead_to_campaign", json_body=body)
 
     # ------------------------------------------------------------------
     # Replies
@@ -122,15 +127,18 @@ class MeetAlfredClient:
 
     def get_replies(
         self,
-        campaign_id: str | None = None,
-        page: int = 1,
-        per_page: int = 50,
+        page: int = 0,
+        per_page: int = 25,
     ) -> Any:
-        """Retrieve replies from leads."""
-        params: dict[str, Any] = {"page": page, "per_page": per_page}
-        if campaign_id:
-            params["campaign_id"] = campaign_id
-        return self._request("GET", "/replies", params=params)
+        """Retrieve replies from leads. Returns data in 'actions' array.
+
+        Args:
+            page: Page number (starts at 0).
+            per_page: Results per page.
+        """
+        return self._request(
+            "GET", "/new-reply-detected", params={"page": page, "per_page": per_page}
+        )
 
     # ------------------------------------------------------------------
     # Connections
@@ -138,54 +146,89 @@ class MeetAlfredClient:
 
     def get_connections(
         self,
-        page: int = 1,
-        per_page: int = 50,
+        return_only_synced: bool = True,
+        page: int = 0,
+        per_page: int = 25,
     ) -> Any:
-        """Retrieve connection data between leads and team members."""
-        params: dict[str, Any] = {"page": page, "per_page": per_page}
-        return self._request("GET", "/connections", params=params)
+        """Retrieve LinkedIn connections.
+
+        Args:
+            return_only_synced: Only return synced connections.
+            page: Page number (starts at 0).
+            per_page: Results per page.
+        """
+        params: dict[str, Any] = {
+            "return_only_synced": str(return_only_synced).lower(),
+            "page": page,
+            "per_page": per_page,
+        }
+        return self._request("GET", "/new-connections", params=params)
 
     # ------------------------------------------------------------------
     # Team
     # ------------------------------------------------------------------
 
     def get_team_members(self) -> Any:
-        """Retrieve list of team members."""
-        return self._request("GET", "/teams/members")
+        """Retrieve team members (requires team owner access)."""
+        return self._request("GET", "/get_team_members")
 
     def get_member_connections(
         self,
-        member_id: str | None = None,
-        page: int = 1,
-        per_page: int = 50,
+        page: int = 0,
+        per_page: int = 25,
     ) -> Any:
-        """Retrieve connections for a specific team member."""
-        params: dict[str, Any] = {"page": page, "per_page": per_page}
-        if member_id:
-            params["member_id"] = member_id
-        return self._request("GET", "/members/connections", params=params)
+        """Retrieve connections across team members.
+
+        Args:
+            page: Page number (starts at 0).
+            per_page: Results per page.
+        """
+        return self._request(
+            "GET",
+            "/get_member_connections",
+            params={"page": page, "per_page": per_page},
+        )
 
     # ------------------------------------------------------------------
-    # Activity
+    # Activity / Last Actions
     # ------------------------------------------------------------------
+
+    VALID_ACTIONS = (
+        "invites",
+        "already_connected",
+        "already_invited",
+        "accepted",
+        "messages",
+        "replies",
+        "emails",
+        "email_replies",
+        "twitter",
+        "twitter_replies",
+        "all_replies",
+        "greetings",
+    )
 
     def get_last_actions(
         self,
-        page: int = 1,
-        per_page: int = 50,
+        action: str = "all_replies",
+        page: int = 0,
+        per_page: int = 25,
     ) -> Any:
-        """Retrieve recent account activity."""
-        params: dict[str, Any] = {"page": page, "per_page": per_page}
-        return self._request("GET", "/actions/last", params=params)
+        """Retrieve recent actions/activity.
 
-    # ------------------------------------------------------------------
-    # User / Preferences (discovered via browser network inspection)
-    # ------------------------------------------------------------------
-
-    def get_user_preferences(self) -> Any:
-        """Retrieve current user preferences."""
-        return self._request("GET", "/users/preferences")
-
-    def get_me(self) -> Any:
-        """Retrieve current user profile."""
-        return self._request("GET", "/users/me")
+        Args:
+            action: Action type filter. One of: invites, already_connected,
+                already_invited, accepted, messages, replies, emails,
+                email_replies, twitter, twitter_replies, all_replies, greetings.
+            page: Page number (starts at 0).
+            per_page: Results per page.
+        """
+        if action not in self.VALID_ACTIONS:
+            raise ValueError(
+                f"Invalid action '{action}'. Must be one of: {', '.join(self.VALID_ACTIONS)}"
+            )
+        return self._request(
+            "GET",
+            "/get-last-actions",
+            params={"action": action, "page": page, "per_page": per_page},
+        )
