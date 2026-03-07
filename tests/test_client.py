@@ -578,6 +578,55 @@ class TestCampaignOperations:
             result = jwt_client.get_campaigns_grouped()
             assert result == data
 
+    def test_get_campaign_sequence(self, jwt_client, mock_response):
+        campaign_data = {
+            "id": 100,
+            "touchSequence": {
+                "sequence": [
+                    {"type": "LI View", "delay_number": 1},
+                    {"type": "LI Connect", "message": "Hi {{first_name}}"},
+                ]
+            },
+        }
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response(campaign_data)
+        ) as mock_req:
+            result = jwt_client.get_campaign_sequence(campaign_id=100)
+            args, _ = mock_req.call_args
+            assert args[0] == "GET"
+            assert "/campaigns/100" in args[1]
+            assert result == campaign_data["touchSequence"]
+
+    def test_get_campaign_sequence_missing(self, jwt_client, mock_response):
+        campaign_data = {"id": 100}
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response(campaign_data)
+        ):
+            result = jwt_client.get_campaign_sequence(campaign_id=100)
+            assert result == {}
+
+    def test_update_campaign_sequence(self, jwt_client, mock_response):
+        sequence = [
+            {"type": "LI View", "delay_number": 1, "delay_time_unit": "day(s)"},
+            {
+                "type": "LI Connect",
+                "delay_number": 1,
+                "delay_time_unit": "day(s)",
+                "message": "Hi {{first_name}}, updated message.",
+                "connect_followup": True,
+                "followup_message": "Thanks for connecting.",
+            },
+        ]
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response({"ok": True})
+        ) as mock_req:
+            jwt_client.update_campaign_sequence(campaign_id=100, sequence=sequence)
+            args, kwargs = mock_req.call_args
+            assert args[0] == "PATCH"
+            assert "/campaigns/100/sequence" in args[1]
+            body = kwargs.get("json") or kwargs.get("data")
+            assert body == {"touchSequence": {"sequence": sequence}}
+
 
 # ------------------------------------------------------------------
 # Conversations / Messaging

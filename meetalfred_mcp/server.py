@@ -549,6 +549,66 @@ def archive_campaign(campaign_id: int) -> str:
 
 
 @mcp.tool()
+def get_campaign_sequence(campaign_id: int) -> str:
+    """Get the touch sequence for a campaign. Requires JWT token.
+
+    Returns the sequence steps with their types, messages, delays, and settings.
+    Useful for inspecting the current sequence before updating it.
+
+    Args:
+        campaign_id: Campaign ID.
+    """
+    try:
+        result = _get_client().get_campaign_sequence(campaign_id=campaign_id)
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def update_campaign_sequence(campaign_id: int, sequence: list[dict]) -> str:
+    """Update the touch sequence (message templates, delays, actions) for a campaign.
+    Requires JWT token.
+
+    IMPORTANT: This replaces the entire sequence. First call get_campaign_sequence
+    to read the current sequence, modify only the fields you need, then pass the
+    full sequence back.
+
+    Each step in the sequence should have at minimum:
+    - type: "LI View", "LI Connect", or "LI Message"
+    - delay_number: Number of delay units before this step
+    - delay_time_unit: "day(s)" or "hour(s)"
+
+    For "LI Connect" steps:
+    - message: Connection request message text
+    - connect_followup: true/false (send follow-up on acceptance)
+    - followup_message: Message sent when connection is accepted
+
+    For "LI Message" steps:
+    - message: Direct message text
+
+    For "LI View" steps:
+    - view: true/false
+    - auto_endorse: true/false
+    - auto_post_like: true/false
+    - auto_follow: true/false
+
+    Template variables: {{first_name}}, {{last_name}}, {{company}}, {{title}}
+
+    Args:
+        campaign_id: Campaign ID to update.
+        sequence: List of touch step dicts (replaces entire sequence).
+    """
+    try:
+        result = _get_client().update_campaign_sequence(
+            campaign_id=campaign_id, sequence=sequence
+        )
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
 def get_campaigns_grouped() -> str:
     """Get all campaigns grouped by category (linkedin, email, twitter). Requires JWT token."""
     try:

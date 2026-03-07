@@ -499,6 +499,35 @@ class MeetAlfredClient:
         """
         return self._api_request("PATCH", f"/campaigns/{campaign_id}/archive")
 
+    def get_campaign_sequence(self, campaign_id: int) -> Any:
+        """Get the touch sequence for a campaign.
+
+        Args:
+            campaign_id: Campaign ID.
+
+        Returns the touchSequence object from the campaign data.
+        """
+        campaign = self._api_request("GET", f"/campaigns/{campaign_id}")
+        return campaign.get("touchSequence", {})
+
+    def update_campaign_sequence(
+        self, campaign_id: int, sequence: list[dict[str, Any]]
+    ) -> Any:
+        """Update the touch sequence for a campaign.
+
+        Args:
+            campaign_id: Campaign ID.
+            sequence: List of touch step dicts. Each step should have at minimum
+                a ``type`` field (e.g. "LI View", "LI Connect", "LI Message")
+                and the relevant fields for that type (message, delay_number,
+                delay_time_unit, connect_followup, followup_message, etc.).
+        """
+        return self._api_request(
+            "PATCH",
+            f"/campaigns/{campaign_id}/sequence",
+            json_body={"touchSequence": {"sequence": sequence}},
+        )
+
     def get_campaigns_grouped(self) -> Any:
         """Get all campaigns grouped by category (linkedin, email, twitter)."""
         return self._api_request("GET", "/campaigns/grouped")
