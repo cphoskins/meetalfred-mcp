@@ -746,6 +746,125 @@ class TestLeadManagement:
 
 
 # ------------------------------------------------------------------
+# Posts (Social Publishing)
+# ------------------------------------------------------------------
+
+
+class TestPosts:
+    def test_list_posts(self, jwt_client, mock_response):
+        data = {"posts": [{"id": 1, "title": "Test"}], "total": 1}
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response(data)
+        ) as mock_req:
+            result = jwt_client.list_posts(page=2, per_page=10)
+            assert result == data
+            _, kwargs = mock_req.call_args
+            assert kwargs["params"]["page"] == 2
+            assert kwargs["params"]["perPage"] == 10
+
+    def test_get_post_types(self, jwt_client, mock_response):
+        data = {"linkedIn": 5, "facebook": 0, "instagram": 0, "twitter": 0}
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response(data)
+        ) as mock_req:
+            result = jwt_client.get_post_types()
+            assert result == data
+            args, _ = mock_req.call_args
+            assert "/posts/types" in args[1]
+
+    def test_get_post(self, jwt_client, mock_response):
+        data = {"id": 42, "title": "My Post", "content": "Hello world"}
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response(data)
+        ) as mock_req:
+            result = jwt_client.get_post(post_id=42)
+            assert result == data
+            args, _ = mock_req.call_args
+            assert "/posts/42" in args[1]
+
+    def test_create_post(self, jwt_client, mock_response):
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response({})
+        ) as mock_req:
+            jwt_client.create_post(
+                title="Test Post",
+                content="Post body",
+                scheduled_at="2026-03-15T14:00:00.000Z",
+            )
+            args, kwargs = mock_req.call_args
+            assert args[0] == "POST"
+            assert "/posts" in args[1]
+            body = kwargs["json"]
+            assert body["title"] == "Test Post"
+            assert body["content"] == "Post body"
+            assert body["scheduledAt"] == "2026-03-15T14:00:00.000Z"
+            assert body["postTypes"] == ["linkedin"]
+            assert body["postAs"] == "You"
+            assert body["audience"] == "anyone"
+            assert body["allowComments"] is True
+
+    def test_create_post_custom_options(self, jwt_client, mock_response):
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response({})
+        ) as mock_req:
+            jwt_client.create_post(
+                title="Custom",
+                content="Body",
+                scheduled_at="2026-04-01T09:00:00.000Z",
+                post_types=["linkedin", "facebook"],
+                post_as="ProAction",
+                audience="connections",
+                allow_comments=False,
+            )
+            body = mock_req.call_args[1]["json"]
+            assert body["postTypes"] == ["linkedin", "facebook"]
+            assert body["postAs"] == "ProAction"
+            assert body["audience"] == "connections"
+            assert body["allowComments"] is False
+
+    def test_update_post(self, jwt_client, mock_response):
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response({})
+        ) as mock_req:
+            jwt_client.update_post(post_id=42, content="Updated body", title="New Title")
+            args, kwargs = mock_req.call_args
+            assert args[0] == "PATCH"
+            assert "/posts/42" in args[1]
+            assert kwargs["json"]["content"] == "Updated body"
+            assert kwargs["json"]["title"] == "New Title"
+
+    def test_update_post_time(self, jwt_client, mock_response):
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response({})
+        ) as mock_req:
+            jwt_client.update_post_time(
+                post_id=42, scheduled_at="2026-03-16T15:00:00.000Z"
+            )
+            args, kwargs = mock_req.call_args
+            assert args[0] == "PATCH"
+            assert "/posts/42/post-time" in args[1]
+            assert kwargs["json"]["scheduledAt"] == "2026-03-16T15:00:00.000Z"
+
+    def test_archive_post(self, jwt_client, mock_response):
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response({})
+        ) as mock_req:
+            jwt_client.archive_post(post_id=42)
+            args, _ = mock_req.call_args
+            assert args[0] == "PATCH"
+            assert "/posts/42/archive" in args[1]
+
+    def test_delete_post(self, jwt_client, mock_response):
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response({})
+        ) as mock_req:
+            jwt_client.delete_post(post_id=42)
+            args, _ = mock_req.call_args
+            assert args[0] == "DELETE"
+            assert "/posts/42" in args[1]
+
+
+# ------------------------------------------------------------------
 # Notifications
 # ------------------------------------------------------------------
 

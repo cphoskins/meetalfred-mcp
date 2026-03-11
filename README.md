@@ -2,7 +2,7 @@
 
 <!-- mcp-name: io.github.cphoskins/meetalfred-mcp -->
 
-MCP server for [MeetAlfred](https://meetalfred.com) — LinkedIn automation campaign monitoring, lead management, reply tracking, messaging, tag management, and campaign CRUD.
+MCP server for [MeetAlfred](https://meetalfred.com) — LinkedIn automation campaign monitoring, lead management, reply tracking, messaging, tag management, campaign CRUD, and social post scheduling.
 
 ## Features
 
@@ -11,6 +11,7 @@ MCP server for [MeetAlfred](https://meetalfred.com) — LinkedIn automation camp
 - **Reply tracking** — pull replies, view conversation threads, send messages
 - **Tag management** — full CRUD on tags (create, list, update, delete)
 - **Lead tagging** — add/set tags on individual leads or in bulk
+- **Social post scheduling** — create, update, reschedule, archive, and delete LinkedIn posts
 - **Activity feed** — review recent account actions across all channels
 - **Notifications** — check unread count
 - **Team visibility** — list team members and their connections
@@ -24,7 +25,7 @@ This server uses **two MeetAlfred API layers**:
 | Layer | Auth | Required | Capabilities |
 |-------|------|----------|-------------|
 | **Webhook API** | `MEETALFRED_API_KEY` | Yes | Campaigns, leads, replies, connections, activity (read-heavy) |
-| **Internal API** | `MEETALFRED_JWT_TOKEN` | No | Tags CRUD, campaign management, messaging, lead ops, notifications |
+| **Internal API** | `MEETALFRED_JWT_TOKEN` | No | Tags CRUD, campaign management, messaging, lead ops, post scheduling, notifications |
 
 The webhook API provides core read operations. The internal API (optional) enables full CRUD, messaging, and richer data. Both work simultaneously.
 
@@ -172,6 +173,19 @@ Add to `claude_desktop_config.json`:
 | `add_tags_to_leads` | Add tags to one or more leads |
 | `exclude_leads` | Exclude or un-exclude leads from campaigns |
 
+### Internal API — Posts / Social Publishing (requires `MEETALFRED_JWT_TOKEN`)
+
+| Tool | Description |
+|------|-------------|
+| `list_posts` | List scheduled and published posts with engagement stats |
+| `get_post_types` | Get post counts by platform (LinkedIn, Facebook, Instagram, Twitter) |
+| `get_post` | Get full details of a single post (content, status, schedule, audience) |
+| `create_post` | Create a new scheduled LinkedIn post (set title, content, time, audience) |
+| `update_post` | Update a pending post's content, title, audience, or schedule |
+| `update_post_time` | Reschedule a pending post to a new time |
+| `archive_post` | Archive a post |
+| `delete_post` | Delete a post |
+
 ### Internal API — Other (requires `MEETALFRED_JWT_TOKEN`)
 
 | Tool | Description |
@@ -184,7 +198,7 @@ Add to `claude_desktop_config.json`:
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `MEETALFRED_API_KEY` | Yes | API key from Settings > Integrations > Webhooks |
-| `MEETALFRED_JWT_TOKEN` | No | JWT token for internal API (enables tags, campaign CRUD, messaging) |
+| `MEETALFRED_JWT_TOKEN` | No | JWT token for internal API (enables tags, campaign CRUD, messaging, post scheduling) |
 | `MEETALFRED_BASE_URL` | No | Override webhook API base URL for white-label instances |
 | `MEETALFRED_API_BASE_URL` | No | Override internal API base URL for white-label instances |
 
@@ -203,6 +217,14 @@ Add to `claude_desktop_config.json`:
 ```
 1. get_campaign_leads(campaignId, "replied") → find lead entityUrn
 2. return_lead_to_campaign([entityUrn], campaignId)
+```
+
+### Schedule a LinkedIn post
+
+```
+1. create_post(title="Internal label", content="Post body text", scheduled_at="2026-03-15T14:00:00.000Z")
+2. list_posts() → verify post was created, get post ID
+3. update_post_time(postId, "2026-03-16T15:00:00.000Z") → reschedule if needed
 ```
 
 ### Tag leads from a campaign

@@ -22,10 +22,11 @@ mcp = FastMCP(
     "meetalfred",
     instructions=(
         "MeetAlfred MCP server for LinkedIn automation campaign monitoring and management. "
-        "Pull campaign data, track replies, manage leads, CRUD tags, and review activity. "
+        "Pull campaign data, track replies, manage leads, CRUD tags, review activity, "
+        "and create/schedule LinkedIn posts. "
         "Use get_campaigns first to find campaign IDs for filtering other tools. "
         "Webhook API tools: pages start at 0. Internal API tools: pages start at 1. "
-        "Internal API tools (tags, campaign CRUD, detailed replies) require MEETALFRED_JWT_TOKEN."
+        "Internal API tools (tags, campaign CRUD, detailed replies, posts) require MEETALFRED_JWT_TOKEN."
     ),
 )
 
@@ -762,6 +763,180 @@ def exclude_leads(entity_urns: list[str], exclude: bool = True) -> str:
             entity_urns=entity_urns, exclude=exclude,
         )
         return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+# ------------------------------------------------------------------
+# Posts (Social Publishing)
+# ------------------------------------------------------------------
+
+
+@mcp.tool()
+def list_posts(
+    page: int = 1,
+    per_page: int = 25,
+) -> str:
+    """List scheduled and published LinkedIn posts. Requires JWT token.
+
+    Returns posts with ID, title, status, scheduled time, post URL, and engagement stats.
+
+    Args:
+        page: Page number (starts at 1).
+        per_page: Results per page (default 25).
+    """
+    try:
+        result = _get_client().list_posts(page=page, per_page=per_page)
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def get_post_types() -> str:
+    """Get post counts by platform type (linkedIn, facebook, instagram, twitter). Requires JWT token."""
+    try:
+        result = _get_client().get_post_types()
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def get_post(post_id: int) -> str:
+    """Get full details of a single post. Requires JWT token.
+
+    Returns title, content, status, scheduled time, platform, audience, and engagement.
+
+    Args:
+        post_id: Post ID (from list_posts).
+    """
+    try:
+        result = _get_client().get_post(post_id=post_id)
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def create_post(
+    title: str,
+    content: str,
+    scheduled_at: str,
+    post_types: list[str] = ["linkedin"],
+    post_as: str = "You",
+    audience: str = "anyone",
+    allow_comments: bool = True,
+) -> str:
+    """Create a new scheduled LinkedIn post. Requires JWT token.
+
+    The post will be published at the scheduled time via MeetAlfred.
+    After creation, use list_posts to verify and get the post ID.
+
+    Args:
+        title: Internal label for the post (not shown on LinkedIn).
+        content: The post body text that will appear on LinkedIn.
+        scheduled_at: When to publish, ISO 8601 format (e.g. '2026-03-15T14:00:00.000Z').
+        post_types: Platforms to post to (default ['linkedin']).
+        post_as: Post as 'You' (personal profile) or company page name.
+        audience: Visibility scope (default 'anyone').
+        allow_comments: Whether to allow comments (default true).
+    """
+    try:
+        result = _get_client().create_post(
+            title=title,
+            content=content,
+            scheduled_at=scheduled_at,
+            post_types=post_types,
+            post_as=post_as,
+            audience=audience,
+            allow_comments=allow_comments,
+        )
+        # create_post returns empty body on 201, so confirm via list
+        return json.dumps({"status": "success", "data": result or {"created": True}}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def update_post(
+    post_id: int,
+    title: str = "",
+    content: str = "",
+    scheduled_at: str = "",
+    audience: str = "",
+    allow_comments: bool = True,
+) -> str:
+    """Update a scheduled post. Requires JWT token.
+
+    Only pending posts can be updated. Pass only the fields you want to change.
+
+    Args:
+        post_id: Post ID (from list_posts).
+        title: New internal title (optional).
+        content: New post body text (optional).
+        scheduled_at: New scheduled time in ISO 8601 format (optional).
+        audience: New audience scope (optional).
+        allow_comments: Whether to allow comments.
+    """
+    try:
+        fields: dict = {}
+        if title:
+            fields["title"] = title
+        if content:
+            fields["content"] = content
+        if scheduled_at:
+            fields["scheduledAt"] = scheduled_at
+        if audience:
+            fields["audience"] = audience
+        fields["allowComments"] = allow_comments
+        if len(fields) <= 1:
+            return json.dumps({"status": "error", "message": "No fields to update"})
+        result = _get_client().update_post(post_id=post_id, **fields)
+        return json.dumps({"status": "success", "data": result or {"updated": True}}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def update_post_time(post_id: int, scheduled_at: str) -> str:
+    """Reschedule a pending post. Requires JWT token.
+
+    Args:
+        post_id: Post ID (from list_posts).
+        scheduled_at: New scheduled time in ISO 8601 format (e.g. '2026-03-15T14:00:00.000Z').
+    """
+    try:
+        result = _get_client().update_post_time(post_id=post_id, scheduled_at=scheduled_at)
+        return json.dumps({"status": "success", "data": result or {"updated": True}}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def archive_post(post_id: int) -> str:
+    """Archive a post. Requires JWT token.
+
+    Args:
+        post_id: Post ID (from list_posts).
+    """
+    try:
+        result = _get_client().archive_post(post_id=post_id)
+        return json.dumps({"status": "success", "data": result or {"archived": True}}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def delete_post(post_id: int) -> str:
+    """Delete a post. Requires JWT token. Use with caution.
+
+    Args:
+        post_id: Post ID (from list_posts).
+    """
+    try:
+        result = _get_client().delete_post(post_id=post_id)
+        return json.dumps({"status": "success", "data": result or {"deleted": True}}, indent=2)
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
 

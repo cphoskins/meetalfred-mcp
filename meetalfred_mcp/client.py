@@ -666,6 +666,106 @@ class MeetAlfredClient:
         )
 
     # ------------------------------------------------------------------
+    # Posts (Social Publishing)
+    # ------------------------------------------------------------------
+
+    def list_posts(
+        self,
+        page: int = 1,
+        per_page: int = 25,
+    ) -> Any:
+        """List scheduled/published posts.
+
+        Args:
+            page: Page number (starts at 1).
+            per_page: Results per page.
+        """
+        return self._api_request(
+            "GET", "/posts", params={"page": page, "perPage": per_page}
+        )
+
+    def get_post_types(self) -> Any:
+        """Get post type counts (linkedIn, facebook, instagram, twitter)."""
+        return self._api_request("GET", "/posts/types")
+
+    def get_post(self, post_id: int) -> Any:
+        """Get a single post by ID.
+
+        Args:
+            post_id: Post ID.
+        """
+        return self._api_request("GET", f"/posts/{post_id}")
+
+    def create_post(
+        self,
+        title: str,
+        content: str,
+        scheduled_at: str,
+        post_types: list[str] | None = None,
+        post_as: str = "You",
+        audience: str = "anyone",
+        allow_comments: bool = True,
+    ) -> Any:
+        """Create a new scheduled post.
+
+        Args:
+            title: Post title (internal label, not shown on LinkedIn).
+            content: Post body text.
+            scheduled_at: ISO 8601 datetime string (e.g. '2026-03-15T14:00:00.000Z').
+            post_types: List of platforms (e.g. ['linkedin']). Defaults to ['linkedin'].
+            post_as: 'You' (personal profile) or company page name.
+            audience: 'anyone' or other audience scope.
+            allow_comments: Whether to allow comments.
+        """
+        body = {
+            "title": title,
+            "content": content,
+            "scheduledAt": scheduled_at,
+            "postTypes": post_types or ["linkedin"],
+            "postAs": post_as,
+            "audience": audience,
+            "allowComments": allow_comments,
+        }
+        return self._api_request("POST", "/posts", json_body=body)
+
+    def update_post(self, post_id: int, **fields: Any) -> Any:
+        """Update a post.
+
+        Args:
+            post_id: Post ID.
+            **fields: Fields to update (content, title, scheduledAt, etc.).
+        """
+        return self._api_request("PATCH", f"/posts/{post_id}", json_body=fields)
+
+    def update_post_time(self, post_id: int, scheduled_at: str) -> Any:
+        """Update the scheduled time of a post.
+
+        Args:
+            post_id: Post ID.
+            scheduled_at: New ISO 8601 datetime string.
+        """
+        return self._api_request(
+            "PATCH", f"/posts/{post_id}/post-time",
+            json_body={"scheduledAt": scheduled_at},
+        )
+
+    def archive_post(self, post_id: int) -> Any:
+        """Archive a post.
+
+        Args:
+            post_id: Post ID.
+        """
+        return self._api_request("PATCH", f"/posts/{post_id}/archive")
+
+    def delete_post(self, post_id: int) -> Any:
+        """Delete a post.
+
+        Args:
+            post_id: Post ID.
+        """
+        return self._api_request("DELETE", f"/posts/{post_id}")
+
+    # ------------------------------------------------------------------
     # Notifications
     # ------------------------------------------------------------------
 
