@@ -28,7 +28,21 @@ echo "  - pyproject.toml"
 echo "  - meetalfred_mcp/__init__.py"
 echo "  - server.json"
 echo ""
+# Detect GitHub repo from git remote
+REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
+GITHUB_REPO=""
+if [[ "$REMOTE_URL" =~ github\.com[:/](.+)\.git$ ]]; then
+    GITHUB_REPO="${BASH_REMATCH[1]}"
+elif [[ "$REMOTE_URL" =~ github\.com[:/](.+)$ ]]; then
+    GITHUB_REPO="${BASH_REMATCH[1]}"
+fi
+
 echo "Next steps:"
 echo "  git add -A && git commit -m 'Release v${NEW_VERSION}'"
 echo "  git tag v${NEW_VERSION}"
 echo "  git push origin main --tags"
+echo ""
+if [ -n "$GITHUB_REPO" ]; then
+    echo "Create the GitHub release:"
+    echo "  https://github.com/${GITHUB_REPO}/releases/new?tag=v${NEW_VERSION}&title=v${NEW_VERSION}"
+fi

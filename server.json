@@ -6,12 +6,12 @@
     "url": "https://github.com/cphoskins/meetalfred-mcp",
     "source": "github"
   },
-  "version": "0.1.0",
+  "version": "0.3.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "meetalfred-mcp",
-      "version": "0.1.0",
+      "version": "0.3.0",
       "transport": {
         "type": "stdio"
       },
