@@ -725,17 +725,33 @@ class MeetAlfredClient:
             "postAs": post_as,
             "audience": audience,
             "allowComments": allow_comments,
+            "attachments": [],
         }
         return self._api_request("POST", "/posts", json_body=body)
 
     def update_post(self, post_id: int, **fields: Any) -> Any:
         """Update a post.
 
+        The MeetAlfred API requires all core fields on PATCH, not just
+        the changed ones.  Fetch the current post first, merge in the
+        caller's overrides, and send the full body.
+
         Args:
             post_id: Post ID.
             **fields: Fields to update (content, title, scheduledAt, etc.).
         """
-        return self._api_request("PATCH", f"/posts/{post_id}", json_body=fields)
+        current = self.get_post(post_id)
+        body = {
+            "title": current.get("title", ""),
+            "content": current.get("content", ""),
+            "scheduledAt": current.get("scheduledAt", ""),
+            "postTypes": [current.get("postType", "linkedin")],
+            "postAs": current.get("postAs", "You"),
+            "audience": current.get("audience", "anyone"),
+            "allowComments": current.get("isCommentsAllowed", True),
+        }
+        body.update(fields)
+        return self._api_request("PATCH", f"/posts/{post_id}", json_body=body)
 
     def update_post_time(self, post_id: int, scheduled_at: str) -> Any:
         """Update the scheduled time of a post.
