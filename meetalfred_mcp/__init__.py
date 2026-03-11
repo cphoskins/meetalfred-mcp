@@ -1,6 +1,6 @@
 """MeetAlfred MCP Server — campaign monitoring, lead management, and reply tracking."""
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 from .client import MeetAlfredClient
 
