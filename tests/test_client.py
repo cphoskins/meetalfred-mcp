@@ -680,6 +680,19 @@ class TestLeadManagement:
             _, kwargs = mock_req.call_args
             assert kwargs["params"]["type"] == "connected"
             assert kwargs["params"]["page"] == 2
+            assert kwargs["params"]["excludedOnly"] is False
+
+    def test_get_campaign_leads_excluded_only(self, jwt_client, mock_response):
+        data = {"total": 3, "leads": [{"entityUrn": "xyz", "isExcluded": True}]}
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response(data)
+        ) as mock_req:
+            result = jwt_client.get_campaign_leads(
+                campaign_id=100, lead_type="approved", excluded_only=True
+            )
+            assert result == data
+            _, kwargs = mock_req.call_args
+            assert kwargs["params"]["excludedOnly"] is True
 
     def test_get_lead_statuses(self, jwt_client, mock_response):
         data = {"leadsCount": 215, "repliesCount": 10}
@@ -912,3 +925,239 @@ class TestUser:
             assert result == user
             args, _ = mock_req.call_args
             assert "/users/me" in args[1]
+
+
+# ------------------------------------------------------------------
+# Statistics & Analytics
+# ------------------------------------------------------------------
+
+
+class TestStatistics:
+    def test_get_statistics_returns_data(self, jwt_client, mock_response):
+        stats = {
+            "invitesSent": 1684,
+            "invitesAccepted": 591,
+            "invitesAcceptedPercent": 35,
+            "messages": 1236,
+            "replies": 186,
+            "repliesPercent": 6,
+            "greetings": 0,
+            "profileViews": 1961,
+        }
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response(stats)
+        ) as mock_req:
+            result = jwt_client.get_statistics()
+            assert result == stats
+            args, kwargs = mock_req.call_args
+            assert args[0] == "GET"
+            assert "/campaigns/statistics" in args[1]
+            assert kwargs["headers"]["Authorization"] == "Bearer test-jwt-token-abc"
+
+    def test_get_statistics_requires_jwt(self, client):
+        with pytest.raises(ValueError, match="JWT token required"):
+            client.get_statistics()
+
+
+class TestCampaignActivityChart:
+    def _make_chart_response(self) -> dict:
+        """Build a mock API response with 30 days of data (03/01/2026–03/30/2026)."""
+        data = {}
+        for day in range(1, 31):
+            date_key = f"03/{day:02d}/2026"
+            data[date_key] = {
+                "connectRequests": day,
+                "connected": 0,
+                "viewed": day * 2,
+                "messages": 1,
+                "responded": 0,
+                "followUp": 0,
+                "greetings": 0,
+                "inmails": 0,
+                "respondedInMails": 0,
+                "eventMessages": 0,
+                "emailsBounced": 0,
+                "groupMessages": 0,
+                "withdrawnInvites": 0,
+                "emails": 0,
+                "emailsReplies": 0,
+            }
+        return {"data": data}
+
+    def test_returns_30_days_by_default(self, jwt_client, mock_response):
+        chart_data = self._make_chart_response()
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response(chart_data)
+        ) as mock_req:
+            result = jwt_client.get_campaign_activity_chart(campaign_id=100)
+            assert len(result) == 30
+            args, _ = mock_req.call_args
+            assert args[0] == "GET"
+            assert "/campaigns/100/activity/chart" in args[1]
+
+    def test_client_side_days_filter(self, jwt_client, mock_response):
+        """days=7 should return only the 7 most recent days."""
+        chart_data = self._make_chart_response()
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response(chart_data)
+        ):
+            result = jwt_client.get_campaign_activity_chart(campaign_id=100, days=7)
+            assert len(result) == 7
+
+    def test_days_filter_returns_most_recent(self, jwt_client, mock_response):
+        """The most recent day (03/30/2026) should be first in the result."""
+        chart_data = self._make_chart_response()
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response(chart_data)
+        ):
+            result = jwt_client.get_campaign_activity_chart(campaign_id=100, days=7)
+            # Sorted descending — most recent first
+            assert result[0]["day"] == "03/30/2026"
+            assert result[-1]["day"] == "03/24/2026"
+
+    def test_result_includes_day_field(self, jwt_client, mock_response):
+        chart_data = self._make_chart_response()
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response(chart_data)
+        ):
+            result = jwt_client.get_campaign_activity_chart(campaign_id=100, days=1)
+            assert "day" in result[0]
+            assert "connectRequests" in result[0]
+
+    def test_uses_bearer_auth(self, jwt_client, mock_response):
+        chart_data = self._make_chart_response()
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response(chart_data)
+        ) as mock_req:
+            jwt_client.get_campaign_activity_chart(campaign_id=100)
+            _, kwargs = mock_req.call_args
+            assert kwargs["headers"]["Authorization"] == "Bearer test-jwt-token-abc"
+
+    def test_empty_data_returns_empty_list(self, jwt_client, mock_response):
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response({"data": {}})
+        ):
+            result = jwt_client.get_campaign_activity_chart(campaign_id=100)
+            assert result == []
+
+
+class TestCampaignProgress:
+    def test_get_campaign_progress(self, jwt_client, mock_response):
+        progress = {
+            "progress": 94,
+            "activeLeadsCount": 215,
+            "completedLeadsCount": 179,
+            "waitingForConnectLeadsCount": 23,
+            "pausedLeadsCount": 13,
+        }
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response(progress)
+        ) as mock_req:
+            result = jwt_client.get_campaign_progress(campaign_id=100)
+            assert result == progress
+            args, kwargs = mock_req.call_args
+            assert args[0] == "GET"
+            assert "/campaigns/100/progress" in args[1]
+            assert kwargs["headers"]["Authorization"] == "Bearer test-jwt-token-abc"
+
+    def test_get_campaign_progress_requires_jwt(self, client):
+        with pytest.raises(ValueError, match="JWT token required"):
+            client.get_campaign_progress(campaign_id=100)
+
+
+class TestCampaignSequenceProgress:
+    def test_get_campaign_sequence_progress(self, jwt_client, mock_response):
+        seq_progress = {
+            "progress": 94,
+            "totalLeads": 215,
+            "activeLeads": 215,
+            "ignoredLeads": 0,
+            "completedLeads": 179,
+            "waitingForConnectLeads": 23,
+            "pausedLeads": 13,
+            "sequenceProgress": {"1": 215, "2": 50, "3": 40, "4": 39, "5": 37},
+        }
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response(seq_progress)
+        ) as mock_req:
+            result = jwt_client.get_campaign_sequence_progress(campaign_id=100)
+            assert result == seq_progress
+            args, _ = mock_req.call_args
+            assert args[0] == "GET"
+            assert "/campaigns/100/sequence-progress" in args[1]
+
+    def test_sequence_progress_requires_jwt(self, client):
+        with pytest.raises(ValueError, match="JWT token required"):
+            client.get_campaign_sequence_progress(campaign_id=100)
+
+
+class TestCampaignActions:
+    def test_get_campaign_actions_default_pagination(self, jwt_client, mock_response):
+        actions_data = {
+            "total": 50,
+            "actions": [
+                {
+                    "id": 1,
+                    "objectUrn": "urn:li:abc",
+                    "campaignName": "Test Campaign",
+                    "campaignId": 100,
+                    "createdAt": "2026-03-24T10:00:00Z",
+                    "description": "requested connect",
+                    "message": "",
+                    "person": {"name": "Jane Doe", "email": "jane@example.com"},
+                }
+            ],
+        }
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response(actions_data)
+        ) as mock_req:
+            result = jwt_client.get_campaign_actions(campaign_id=100)
+            assert result == actions_data
+            args, kwargs = mock_req.call_args
+            assert args[0] == "GET"
+            assert "/campaigns/100/actions" in args[1]
+            assert kwargs["params"]["page"] == 1
+            assert kwargs["params"]["perPage"] == 25
+
+    def test_get_campaign_actions_custom_pagination(self, jwt_client, mock_response):
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response({"total": 0, "actions": []})
+        ) as mock_req:
+            jwt_client.get_campaign_actions(campaign_id=100, page=3, per_page=10)
+            _, kwargs = mock_req.call_args
+            assert kwargs["params"]["page"] == 3
+            assert kwargs["params"]["perPage"] == 10
+
+    def test_get_campaign_actions_uses_bearer_auth(self, jwt_client, mock_response):
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response({"total": 0, "actions": []})
+        ) as mock_req:
+            jwt_client.get_campaign_actions(campaign_id=100)
+            _, kwargs = mock_req.call_args
+            assert kwargs["headers"]["Authorization"] == "Bearer test-jwt-token-abc"
+
+    def test_get_campaign_actions_requires_jwt(self, client):
+        with pytest.raises(ValueError, match="JWT token required"):
+            client.get_campaign_actions(campaign_id=100)
+
+
+class TestDashboard:
+    def test_get_dashboard(self, jwt_client, mock_response):
+        dashboard = {
+            "campaigns": [
+                {"id": 100, "label": "Outreach Q1", "status": "active"}
+            ]
+        }
+        with patch.object(
+            jwt_client.session, "request", return_value=mock_response(dashboard)
+        ) as mock_req:
+            result = jwt_client.get_dashboard()
+            assert result == dashboard
+            args, kwargs = mock_req.call_args
+            assert args[0] == "GET"
+            assert "/campaigns/dashboard" in args[1]
+            assert kwargs["headers"]["Authorization"] == "Bearer test-jwt-token-abc"
+
+    def test_get_dashboard_requires_jwt(self, client):
+        with pytest.raises(ValueError, match="JWT token required"):
+            client.get_dashboard()

@@ -581,20 +581,29 @@ class MeetAlfredClient:
         lead_type: str = "approved",
         page: int = 1,
         per_page: int = 25,
+        excluded_only: bool = False,
     ) -> Any:
         """List leads in a campaign with status filtering.
 
         Args:
             campaign_id: Campaign ID.
-            lead_type: Lead status filter — 'approved', 'connected', 'replied',
-                'messaged', 'invitesPending', etc.
+            lead_type: Lead status filter — 'approved', 'connected', 'replies',
+                'allReplies', 'messaged', 'invitesPending', 'followedUp',
+                'viewed', 'requested', 'alreadyConnected', 'alreadyInvited',
+                'inmailed', 'emailed', 'emailReplies', 'invitesWithdraw', etc.
             page: Page number (starts at 1).
             per_page: Results per page.
+            excluded_only: If True, return only excluded leads.
         """
         return self._api_request(
             "GET",
             f"/leads/campaign/{campaign_id}",
-            params={"page": page, "perPage": per_page, "type": lead_type},
+            params={
+                "page": page,
+                "perPage": per_page,
+                "type": lead_type,
+                "excludedOnly": excluded_only,
+            },
         )
 
     def get_lead_statuses(self, campaign_id: int) -> Any:
@@ -780,6 +789,117 @@ class MeetAlfredClient:
             post_id: Post ID.
         """
         return self._api_request("DELETE", f"/posts/{post_id}")
+
+    # ------------------------------------------------------------------
+    # Statistics & Analytics
+    # ------------------------------------------------------------------
+
+    def get_statistics(self) -> Any:
+        """Get global account statistics — invites sent/accepted, messages, replies, and profile views.
+
+        Returns all-time totals with no date filtering. The API does not support
+        filtering for this endpoint.
+
+        Returns:
+            Dict with invitesSent, invitesAccepted, invitesAcceptedPercent, messages,
+            replies, repliesPercent, greetings, and profileViews.
+        """
+        return self._api_request("GET", "/campaigns/statistics")
+
+    def get_campaign_activity_chart(
+        self, campaign_id: int, days: int = 30
+    ) -> Any:
+        """Get daily activity breakdown for a campaign.
+
+        The API always returns 30 days of data. The ``days`` parameter performs
+        client-side filtering — pass a value less than 30 to receive only the
+        most recent N days.
+
+        Args:
+            campaign_id: Campaign ID.
+            days: Number of most recent days to return (1–30, default 30).
+
+        Returns:
+            List of daily activity dicts sorted descending by date, each containing
+            day, connectRequests, connected, viewed, messages, responded, followUp,
+            greetings, inmails, respondedInMails, eventMessages, emailsBounced,
+            groupMessages, withdrawnInvites, emails, and emailsReplies.
+        """
+        response = self._api_request("GET", f"/campaigns/{campaign_id}/activity/chart")
+        raw: dict[str, Any] = response.get("data", {})
+
+        # Sort by date descending (MM/DD/YYYY strings sort correctly when parsed)
+        from datetime import datetime
+
+        def _parse_date(date_str: str) -> datetime:
+            return datetime.strptime(date_str, "%m/%d/%Y")
+
+        sorted_days = sorted(raw.items(), key=lambda kv: _parse_date(kv[0]), reverse=True)
+
+        # Slice to the requested number of days and return as a list
+        sliced = sorted_days[:days] if days < 30 else sorted_days
+        return [{"day": k, **v} for k, v in sliced]
+
+    def get_campaign_progress(self, campaign_id: int) -> Any:
+        """Get campaign completion progress and lead status counts.
+
+        Args:
+            campaign_id: Campaign ID.
+
+        Returns:
+            Dict with progress (%), activeLeadsCount, completedLeadsCount,
+            waitingForConnectLeadsCount, and pausedLeadsCount.
+        """
+        return self._api_request("GET", f"/campaigns/{campaign_id}/progress")
+
+    def get_campaign_sequence_progress(self, campaign_id: int) -> Any:
+        """Get detailed sequence funnel with per-step lead counts.
+
+        Args:
+            campaign_id: Campaign ID.
+
+        Returns:
+            Dict with progress, totalLeads, activeLeads, ignoredLeads,
+            completedLeads, waitingForConnectLeads, pausedLeads, and
+            sequenceProgress (dict mapping step number to lead count).
+        """
+        return self._api_request("GET", f"/campaigns/{campaign_id}/sequence-progress")
+
+    def get_campaign_actions(
+        self,
+        campaign_id: int,
+        page: int = 1,
+        per_page: int = 25,
+    ) -> Any:
+        """Get campaign actions with full person profile data.
+
+        Each action records a touchpoint: found, viewed, requested connect,
+        connected, messaged, etc. Includes the full lead profile object.
+
+        Args:
+            campaign_id: Campaign ID.
+            page: Page number (starts at 1).
+            per_page: Results per page.
+
+        Returns:
+            Dict with total count and actions list. Each action has id, objectUrn,
+            campaignName, campaignId, createdAt, description, message, and person
+            (full profile with name, email, employer, title, location, LinkedIn
+            data, social handles, school, etc.).
+        """
+        return self._api_request(
+            "GET",
+            f"/campaigns/{campaign_id}/actions",
+            params={"page": page, "perPage": per_page},
+        )
+
+    def get_dashboard(self) -> Any:
+        """Get dashboard view with all campaigns, their sequences, and configuration.
+
+        Returns:
+            Dashboard data with campaign list, sequences, and configuration details.
+        """
+        return self._api_request("GET", "/campaigns/dashboard")
 
     # ------------------------------------------------------------------
     # Notifications

@@ -676,20 +676,25 @@ def get_campaign_leads(
     lead_type: str = "approved",
     page: int = 1,
     per_page: int = 25,
+    excluded_only: bool = False,
 ) -> str:
     """List leads in a campaign with status filtering. Requires JWT token.
 
     Args:
         campaign_id: Campaign ID.
-        lead_type: Status filter — 'approved', 'connected', 'replied',
-            'messaged', 'invitesPending', 'followedUp', 'allReplies', etc.
+        lead_type: Status filter — 'approved', 'connected', 'replies',
+            'allReplies', 'messaged', 'invitesPending', 'followedUp',
+            'viewed', 'requested', 'alreadyConnected', 'alreadyInvited',
+            'inmailed', 'emailed', 'emailReplies', 'invitesWithdraw', etc.
         page: Page number (starts at 1).
         per_page: Results per page (default 25).
+        excluded_only: If True, return only excluded leads (default False).
     """
     try:
         result = _get_client().get_campaign_leads(
             campaign_id=campaign_id, lead_type=lead_type,
             page=page, per_page=per_page,
+            excluded_only=excluded_only,
         )
         return json.dumps({"status": "success", "data": result}, indent=2)
     except Exception as e:
@@ -937,6 +942,120 @@ def delete_post(post_id: int) -> str:
     try:
         result = _get_client().delete_post(post_id=post_id)
         return json.dumps({"status": "success", "data": result or {"deleted": True}}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+# ------------------------------------------------------------------
+# Statistics & Analytics
+# ------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_statistics() -> str:
+    """Get global account statistics — invites sent/accepted, messages, replies, profile views,
+    and acceptance/reply percentages. Requires JWT token.
+
+    Returns all-time totals across all campaigns. No date filtering is supported by the API.
+    """
+    try:
+        result = _get_client().get_statistics()
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def get_campaign_activity_chart(campaign_id: int, days: int = 30) -> str:
+    """Get daily activity breakdown for a campaign (last 30 days). Requires JWT token.
+
+    Includes connect requests, connections, views, messages, responses, follow-ups per day.
+    The API always returns 30 days — use the days parameter to limit to the most recent N days.
+
+    Args:
+        campaign_id: Campaign ID (from get_campaigns or list_campaigns_detailed).
+        days: Number of most recent days to return (1–30, default 30).
+    """
+    try:
+        result = _get_client().get_campaign_activity_chart(
+            campaign_id=campaign_id, days=days
+        )
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def get_campaign_progress(campaign_id: int) -> str:
+    """Get campaign completion progress and lead status counts. Requires JWT token.
+
+    Returns overall progress percentage and counts of active, completed,
+    waiting-for-connect, and paused leads.
+
+    Args:
+        campaign_id: Campaign ID (from get_campaigns or list_campaigns_detailed).
+    """
+    try:
+        result = _get_client().get_campaign_progress(campaign_id=campaign_id)
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def get_campaign_sequence_progress(campaign_id: int) -> str:
+    """Get detailed sequence funnel with per-step lead counts. Requires JWT token.
+
+    Shows how many leads have reached each step of the campaign sequence —
+    useful for identifying drop-off points in the funnel.
+
+    Args:
+        campaign_id: Campaign ID (from get_campaigns or list_campaigns_detailed).
+    """
+    try:
+        result = _get_client().get_campaign_sequence_progress(campaign_id=campaign_id)
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def get_campaign_actions(
+    campaign_id: int,
+    page: int = 1,
+    per_page: int = 25,
+) -> str:
+    """Get campaign actions (found, viewed, requested connect, connected, messaged, etc.)
+    with full person profile data. Requires JWT token.
+
+    Each action records a touchpoint event for a lead. The person object includes
+    name, email, employer, title, location, LinkedIn data, social handles, school, etc.
+
+    Args:
+        campaign_id: Campaign ID (from get_campaigns or list_campaigns_detailed).
+        page: Page number (starts at 1).
+        per_page: Results per page (default 25).
+    """
+    try:
+        result = _get_client().get_campaign_actions(
+            campaign_id=campaign_id, page=page, per_page=per_page
+        )
+        return json.dumps({"status": "success", "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+
+@mcp.tool()
+def get_dashboard() -> str:
+    """Get dashboard view with all campaigns, their sequences, and configuration.
+    Requires JWT token.
+
+    Returns a high-level overview of all campaigns with their current state,
+    sequences, and settings — useful for a quick account health check.
+    """
+    try:
+        result = _get_client().get_dashboard()
+        return json.dumps({"status": "success", "data": result}, indent=2)
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
 
